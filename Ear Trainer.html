@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ear Training App</title>
+    <!-- Use the Inter font for a clean look -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Include Tailwind CSS via CDN for rapid styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .container {
+            max-width: 90%;
+            margin: 0 auto;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center p-4">
+
+    <!-- Main application container -->
+    <div id="app-container" class="bg-gray-800 p-6 sm:p-8 rounded-2xl shadow-2xl w-full max-w-lg text-center flex flex-col items-center">
+
+        <!-- App title and description -->
+        <h1 class="text-3xl sm:text-4xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600">Ear Trainer</h1>
+        <p class="text-gray-400 text-sm sm:text-base mb-6">Listen to the two notes and identify the interval.</p>
+
+        <!-- Play button -->
+        <button id="play-button" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition duration-300 transform hover:scale-105 active:scale-95 shadow-md">
+            <svg class="h-6 w-6 inline-block mr-2" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" />
+            </svg>
+            Play Interval
+        </button>
+
+        <!-- Message and score container -->
+        <div id="message-container" class="mt-6 w-full">
+            <p id="message" class="text-lg font-semibold text-gray-300 h-6"></p>
+            <p class="text-sm text-gray-500 mt-2">Score: <span id="score-counter">0</span> / <span id="question-counter">0</span></p>
+        </div>
+
+        <!-- Answer choices grid -->
+        <div id="choices-container" class="grid grid-cols-2 gap-4 mt-6 w-full">
+            <!-- Buttons will be dynamically added here -->
+        </div>
+
+    </div>
+
+    <!-- Tone.js for audio generation -->
+    <script src="https://unpkg.com/tone@14.7.77/build/Tone.js"></script>
+
+    <script>
+        // Use a self-invoking anonymous function to keep variables out of the global scope
+        (function() {
+            // --- UI Elements ---
+            const playButton = document.getElementById('play-button');
+            const choicesContainer = document.getElementById('choices-container');
+            const messageEl = document.getElementById('message');
+            const scoreCounterEl = document.getElementById('score-counter');
+            const questionCounterEl = document.getElementById('question-counter');
+
+            // --- Game State Variables ---
+            let synth = null; // Initialize synth to null
+            let score = 0;
+            let questionsAsked = 0;
+            let currentCorrectInterval;
+
+            // --- Game Data ---
+            const intervals = [
+                { name: "Unison", semitones: 0 },
+                { name: "Minor 2nd", semitones: 1 },
+                { name: "Major 2nd", semitones: 2 },
+                { name: "Minor 3rd", semitones: 3 },
+                { name: "Major 3rd", semitones: 4 },
+                { name: "Perfect 4th", semitones: 5 },
+                { name: "Tritone", semitones: 6 },
+                { name: "Perfect 5th", semitones: 7 },
+                { name: "Minor 6th", semitones: 8 },
+                { name: "Major 6th", semitones: 9 },
+                { name: "Minor 7th", semitones: 10 },
+                { name: "Major 7th", semitones: 11 },
+                { name: "Octave", semitones: 12 }
+            ];
+
+            // --- Utility Functions ---
+
+            // Fisher-Yates shuffle algorithm to randomize an array
+            function shuffleArray(array) {
+                for (let i = array.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [array[i], array[j]] = [array[j], array[i]];
+                }
+                return array;
+            }
+
+            // Function to generate a random number within a range (inclusive)
+            function getRandomNumber(min, max) {
+                return Math.floor(Math.random() * (max - min + 1)) + min;
+            }
+
+            // --- Audio & Game Logic ---
+
+            // Plays the interval notes
+            async function playInterval() {
+                // Ensure Tone.js is running, which requires a user gesture.
+                // This is the most reliable way to handle the audio context.
+                await Tone.start();
+
+                // Initialize the synth only once, after Tone.js is ready.
+                if (!synth) {
+                    synth = new Tone.Synth().toDestination();
+                }
+
+                messageEl.textContent = "Listen...";
+
+                // Get the starting pitch (e.g., C4)
+                const startNote = "C4";
+                const semitonesToAdd = currentCorrectInterval.semitones;
+                // Use Tone.js's built-in pitch shifting to get the second note
+                const endNote = Tone.Frequency(startNote).transpose(semitonesToAdd).toNote();
+
+                // Play the first note
+                synth.triggerAttackRelease(startNote, "8n");
+                // Schedule the second note to play after a short delay
+                setTimeout(() => {
+                    synth.triggerAttackRelease(endNote, "8n");
+                }, 800);
+            }
+
+            // Generates a new question with 4 shuffled choices
+            function generateQuestion() {
+                messageEl.textContent = "";
+                choicesContainer.innerHTML = "";
+                
+                // Select a random correct interval from the list
+                const correctIntervalIndex = getRandomNumber(0, intervals.length - 1);
+                currentCorrectInterval = intervals[correctIntervalIndex];
+
+                // Create a pool of incorrect answers
+                const allIntervalsExceptCorrect = intervals.filter(interval => interval.name !== currentCorrectInterval.name);
+                const shuffledWrongAnswers = shuffleArray(allIntervalsExceptCorrect).slice(0, 3);
+
+                // Combine the correct and wrong answers and shuffle them for the buttons
+                const choices = shuffleArray([currentCorrectInterval, ...shuffledWrongAnswers]);
+
+                // Create and append the choice buttons
+                choices.forEach(choice => {
+                    const button = document.createElement('button');
+                    button.textContent = choice.name;
+                    button.classList.add('choice-button', 'bg-gray-700', 'hover:bg-gray-600', 'text-white', 'font-semibold', 'py-3', 'rounded-xl', 'transition', 'duration-200', 'active:scale-95');
+                    button.onclick = () => handleAnswer(choice);
+                    choicesContainer.appendChild(button);
+                });
+
+                // Re-enable the play button
+                playButton.disabled = false;
+                playButton.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+
+            // Handles the user's answer choice
+            function handleAnswer(selectedChoice) {
+                questionsAsked++;
+                
+                // Disable all choice buttons to prevent multiple clicks
+                const allButtons = document.querySelectorAll('.choice-button');
+                allButtons.forEach(btn => btn.disabled = true);
+                
+                if (selectedChoice.name === currentCorrectInterval.name) {
+                    messageEl.textContent = "Correct!";
+                    messageEl.classList.remove('text-red-500');
+                    messageEl.classList.add('text-green-500');
+                    score++;
+                } else {
+                    messageEl.textContent = `Incorrect. The answer was a ${currentCorrectInterval.name}.`;
+                    messageEl.classList.remove('text-green-500');
+                    messageEl.classList.add('text-red-500');
+                }
+
+                // Update score display
+                scoreCounterEl.textContent = score;
+                questionCounterEl.textContent = questionsAsked;
+
+                // Disable play button while waiting
+                playButton.disabled = true;
+                playButton.classList.add('opacity-50', 'cursor-not-allowed');
+
+                // Wait a moment before generating a new question
+                setTimeout(() => {
+                    generateQuestion();
+                }, 2000); // 2-second delay
+            }
+
+            // --- Event Listeners ---
+            playButton.addEventListener('click', playInterval);
+
+            // Start the application when the DOM is fully loaded
+            document.addEventListener('DOMContentLoaded', generateQuestion);
+
+        })();
+    </script>
+</body>
+</html>
