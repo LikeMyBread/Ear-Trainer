@@ -27,7 +27,7 @@
 
         <!-- App title and description -->
         <h1 class="text-3xl sm:text-4xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600">Ear Trainer</h1>
-        <p id="curriculum-status" class="text-gray-400 text-sm sm:text-base mb-6">Curriculum: Major Scale Focus</p>
+        <p id="curriculum-status" class="text-gray-400 text-sm sm:text-base mb-6">Curriculum: Major Scale</p>
 
         <!-- Play button -->
         <button id="play-button" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition duration-300 transform hover:scale-105 active:scale-95 shadow-md">
@@ -184,7 +184,7 @@
                 setTimeout(generateQuestion, 500); 
             }
             
-            // Calculates the Correctness Score (Correct - Incorrect * 3) for a specific semitone value
+            // Calculates the Correctness Score (Correct - Incorrect * 2) for a specific semitone value
             function getCorrectnessScore(semitones) {
                 if (!earTrainingStats[semitones]) return 0;
                 
@@ -192,8 +192,8 @@
                 let totalAttemptsForInterval = earTrainingStats[semitones].reduce((a, b) => a + b, 0);
                 let incorrectCount = totalAttemptsForInterval - correctCount;
                 
-                // Incorrect answers are multiplied by 3
-                return correctCount - (incorrectCount * 3);
+                // Incorrect answers are multiplied by 2 (Lower Penalty)
+                return correctCount - (incorrectCount * 2);
             }
 
             // --- Curriculum Logic ---
@@ -223,7 +223,7 @@
                     let totalAttemptsForInterval = earTrainingStats[i].reduce((a, b) => a + b, 0);
                     totalAttemptsInSet += totalAttemptsForInterval;
 
-                    // Correctness Score = Correct - Incorrect * 3
+                    // Correctness Score = Correct - Incorrect * 2
                     let score = getCorrectnessScore(i);
                     
                     intervalData.push({
@@ -308,11 +308,11 @@
                 const restrict = shouldRestrictToMajorScale();
                 const availableIntervals = restrict ? majorScaleIntervals : intervals;
                 
-                // Update the curriculum status message to reflect the new threshold
+                // Update the curriculum status message to reflect the new, shorter format
                 if (restrict) {
-                    curriculumStatusEl.textContent = `Curriculum: Major Scale Focus (Goal Score > ${MAJOR_SCALE_CORRECTNESS_THRESHOLD}, Mistakes x3 Penalty)`;
+                    curriculumStatusEl.textContent = "Curriculum: Major Scale";
                 } else {
-                    curriculumStatusEl.textContent = "Curriculum: Full Chromatic (All Intervals)";
+                    curriculumStatusEl.textContent = "Curriculum: Full Chromatic Scale";
                 }
 
                 // 1. Select the correct interval type using the smart logic from the available pool
@@ -360,13 +360,14 @@
                 // --- Record Keeping Update ---
                 const correctSemitones = currentCorrectInterval.semitones;
                 const guessedSemitones = selectedChoice.semitones;
+                let statsUpdated = false;
                 
-                // Update the confusion matrix and save it
+                // 1. Record the actual attempt (Played C, Guessed G). This happens for all attempts (correct or incorrect).
                 if (correctSemitones >= 0 && correctSemitones <= 12 && 
                     guessedSemitones >= 0 && guessedSemitones <= 12) {
                     
                     earTrainingStats[correctSemitones][guessedSemitones]++;
-                    saveStats(); 
+                    statsUpdated = true;
                 } else {
                     console.error("Invalid semitone indices encountered:", correctSemitones, guessedSemitones);
                 }
@@ -386,6 +387,19 @@
                     messageEl.textContent = `Incorrect. The answer was a ${currentCorrectInterval.name}.`;
                     messageEl.classList.remove('text-green-500', 'text-yellow-500', 'text-gray-300');
                     messageEl.classList.add('text-red-500');
+
+                    // 2. Record symmetric confusion for incorrect guesses.
+                    if (correctSemitones >= 0 && correctSemitones <= 12 && 
+                        guessedSemitones >= 0 && guessedSemitones <= 12) {
+                        
+                        earTrainingStats[guessedSemitones][correctSemitones]++;
+                        statsUpdated = true;
+                    }
+                }
+
+                // 3. Save stats once if any update occurred
+                if (statsUpdated) {
+                    saveStats();
                 }
 
                 // Update score display
