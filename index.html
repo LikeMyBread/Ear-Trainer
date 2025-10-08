@@ -37,10 +37,13 @@
             Play Interval
         </button>
 
-        <!-- Message and score container -->
+        <!-- Message and score container - SIMPLIFIED -->
         <div id="message-container" class="mt-6 w-full">
             <p id="message" class="text-lg font-semibold text-gray-300 h-6"></p>
-            <p class="text-sm text-gray-500 mt-2">Score: <span id="score-counter">0</span> / <span id="question-counter">0</span></p>
+            <p class="text-sm text-gray-500 mt-2">
+                <span class="font-semibold">Score:</span> 
+                <span id="score-counter">0</span> 
+            </p>
         </div>
 
         <!-- Answer choices grid -->
@@ -66,7 +69,6 @@
             const choicesContainer = document.getElementById('choices-container');
             const messageEl = document.getElementById('message');
             const scoreCounterEl = document.getElementById('score-counter');
-            const questionCounterEl = document.getElementById('question-counter');
             const resetStatsButton = document.getElementById('reset-stats-button');
             const curriculumStatusEl = document.getElementById('curriculum-status'); 
 
@@ -75,10 +77,13 @@
             const STARTING_MIDI_MAX = 72; // C5
             const STATS_STORAGE_KEY = 'earTrainingConfusionMatrix';
             const MAJOR_SCALE_CORRECTNESS_THRESHOLD = 2; 
+            const WRONG_ANSWER_COUNT = 3;
 
             let synth = null;
-            let score = 0;
-            let questionsAsked = 0;
+            // Internal tracking variables
+            let score = 0; 
+            let questionsAsked = 0; 
+            
             let currentCorrectInterval; 
             let currentStartNote;     
             let currentIntervalShift; 
@@ -136,7 +141,10 @@
                 return matrix;
             }
 
-            // Loads stats from localStorage, or initializes if missing/corrupt
+            /**
+             * Loads stats from localStorage, or initializes if missing/corrupt.
+             * This function ensures persistence of the user's progress.
+             */
             function loadStats() {
                 try {
                     const storedStats = localStorage.getItem(STATS_STORAGE_KEY);
@@ -148,11 +156,13 @@
                             earTrainingStats = initializeStatsMatrix();
                         }
                     } else {
+                        // Initialize only if no stored data is found.
                         earTrainingStats = initializeStatsMatrix();
                     }
                 } catch (e) {
                     console.error("Error loading stats from localStorage:", e);
-                    earTrainingStats = initializeStatsMatrix(); // Fallback to fresh matrix
+                    // Fallback to fresh matrix on error
+                    earTrainingStats = initializeStatsMatrix(); 
                 }
             }
 
@@ -165,25 +175,6 @@
                 }
             }
 
-            // Clears all stats and resets the matrix
-            function resetStats() {
-                localStorage.removeItem(STATS_STORAGE_KEY);
-                earTrainingStats = initializeStatsMatrix();
-                console.log("All Ear Training Stats have been reset.");
-                
-                // Update UI state
-                messageEl.textContent = "Stats Reset! Progress cleared.";
-                messageEl.classList.remove('text-green-500', 'text-red-500', 'text-gray-300');
-                messageEl.classList.add('text-yellow-500');
-                score = 0;
-                questionsAsked = 0;
-                scoreCounterEl.textContent = score;
-                questionCounterEl.textContent = questionsAsked;
-
-                // Start a new question
-                setTimeout(generateQuestion, 500); 
-            }
-            
             // Calculates the Correctness Score (Correct - Incorrect * 2) for a specific semitone value
             function getCorrectnessScore(semitones) {
                 if (!earTrainingStats[semitones]) return 0;
@@ -196,6 +187,41 @@
                 return correctCount - (incorrectCount * 2);
             }
 
+            // Calculates the total correctness score across all intervals in the current curriculum set
+            function calculateTotalCorrectnessScore(intervalSet) {
+                return intervalSet.reduce((total, interval) => {
+                    return total + getCorrectnessScore(interval.semitones);
+                }, 0);
+            }
+            
+            // Updates the UI counters based on the current curriculum and stats matrix
+            function updateScoreDisplay(availableIntervals) {
+                const totalScore = calculateTotalCorrectnessScore(availableIntervals);
+                scoreCounterEl.textContent = totalScore;
+            }
+
+            // Clears all stats and resets the matrix
+            function resetStats() {
+                localStorage.removeItem(STATS_STORAGE_KEY);
+                earTrainingStats = initializeStatsMatrix();
+                console.log("All Ear Training Stats have been reset.");
+                
+                // Update UI state
+                messageEl.textContent = "Stats Reset! Progress cleared.";
+                messageEl.classList.remove('text-green-500', 'text-red-500', 'text-gray-300');
+                messageEl.classList.add('text-yellow-500');
+                
+                // Reset internal session counters
+                score = 0; 
+                questionsAsked = 0;
+
+                // Update display to reflect zero score
+                updateScoreDisplay(majorScaleIntervals); // Use major scale as default after reset
+
+                // Start a new question
+                setTimeout(generateQuestion, 500); 
+            }
+            
             // --- Curriculum Logic ---
 
             // Determines if the training should be restricted to major scale intervals
@@ -308,15 +334,19 @@
                 const restrict = shouldRestrictToMajorScale();
                 const availableIntervals = restrict ? majorScaleIntervals : intervals;
                 
-                // Update the curriculum status message to reflect the new, shorter format
+                // Update the curriculum status message
                 if (restrict) {
                     curriculumStatusEl.textContent = "Curriculum: Major Scale";
                 } else {
                     curriculumStatusEl.textContent = "Curriculum: Full Chromatic Scale";
                 }
 
+                // Update the score display based on the current curriculum selection
+                updateScoreDisplay(availableIntervals);
+
                 // 1. Select the correct interval type using the smart logic from the available pool
                 currentCorrectInterval = chooseNextInterval(availableIntervals);
+                const correctSemitones = currentCorrectInterval.semitones;
 
                 // 2. Determine the random starting note and direction for this question
                 const startMidi = getRandomNumber(STARTING_MIDI_MIN, STARTING_MIDI_MAX);
@@ -328,16 +358,58 @@
                 // Store the final semitone shift (positive for up, negative for down)
                 currentIntervalShift = isAscending ? semitonesDifference : -semitonesDifference;
 
-                // 3. Create the pool of incorrect answers (3 wrong + 1 correct)
-                // Filter based on the *current* available set
-                const allIntervalsExceptCorrect = availableIntervals.filter(interval => interval.name !== currentCorrectInterval.name);
+                // --- 3. Weighted selection for incorrect answer choices ---
                 
-                // Ensure we don't try to slice more wrong answers than available
-                const wrongAnswerCount = Math.min(3, allIntervalsExceptCorrect.length); 
-                const shuffledWrongAnswers = shuffleArray(allIntervalsExceptCorrect).slice(0, wrongAnswerCount);
+                // Potential pool of wrong answers based on the current curriculum
+                const potentialWrongIntervals = availableIntervals.filter(interval => interval.semitones !== correctSemitones);
+
+                let weightedWrongChoices = [];
+                let totalConfusionWeight = 0;
+
+                potentialWrongIntervals.forEach(interval => {
+                    // Weight is the number of times the user confused the correct interval (correctSemitones)
+                    // with this wrong interval (interval.semitones).
+                    const confusionCount = earTrainingStats[correctSemitones][interval.semitones];
+                    
+                    // Add a base weight of 1 to ensure even rarely confused choices have a chance (and to avoid zero weight if confusion is 0)
+                    const weight = confusionCount + 1; 
+
+                    weightedWrongChoices.push({
+                        interval: interval,
+                        weight: weight
+                    });
+                    totalConfusionWeight += weight;
+                });
+                
+                // Select unique wrong answers using weighted random sampling
+                let selectedWrongAnswers = [];
+                let availableWrongChoices = [...weightedWrongChoices]; // Copy for mutable selection
+
+                const wrongAnswerCountToPick = Math.min(WRONG_ANSWER_COUNT, availableWrongChoices.length);
+
+                while (selectedWrongAnswers.length < wrongAnswerCountToPick && availableWrongChoices.length > 0) {
+                    let randomValue = Math.random() * totalConfusionWeight;
+                    
+                    for (let i = 0; i < availableWrongChoices.length; i++) {
+                        const choice = availableWrongChoices[i];
+                        
+                        randomValue -= choice.weight;
+                        
+                        if (randomValue <= 0) {
+                            // Found a selected wrong answer
+                            selectedWrongAnswers.push(choice.interval);
+                            
+                            // Remove the selected choice from the pool and update total weight
+                            totalConfusionWeight -= choice.weight;
+                            availableWrongChoices.splice(i, 1);
+                            break; 
+                        }
+                    }
+                }
+                // --- End of weighted selection ---
 
                 // 4. Combine and shuffle the choices for the buttons
-                const choices = shuffleArray([currentCorrectInterval, ...shuffledWrongAnswers]);
+                const choices = shuffleArray([currentCorrectInterval, ...selectedWrongAnswers]);
 
                 // 5. Create and append the choice buttons
                 choices.forEach(choice => {
@@ -351,11 +423,14 @@
                 // Re-enable the play button
                 playButton.disabled = false;
                 playButton.classList.remove('opacity-50', 'cursor-not-allowed');
+
+                // *** AUTOPLAY THE INTERVAL ***
+                playInterval();
             }
 
             // Handles the user's answer choice
             function handleAnswer(selectedChoice) {
-                questionsAsked++;
+                questionsAsked++; // Keep for internal tracking
                 
                 // --- Record Keeping Update ---
                 const correctSemitones = currentCorrectInterval.semitones;
@@ -382,7 +457,6 @@
                     messageEl.textContent = "Correct!";
                     messageEl.classList.remove('text-red-500', 'text-yellow-500', 'text-gray-300');
                     messageEl.classList.add('text-green-500');
-                    score++;
                 } else {
                     messageEl.textContent = `Incorrect. The answer was a ${currentCorrectInterval.name}.`;
                     messageEl.classList.remove('text-green-500', 'text-yellow-500', 'text-gray-300');
@@ -402,9 +476,11 @@
                     saveStats();
                 }
 
-                // Update score display
-                scoreCounterEl.textContent = score;
-                questionCounterEl.textContent = questionsAsked;
+                // Recalculate and update score display based on the updated matrix
+                const restrict = shouldRestrictToMajorScale();
+                const availableIntervals = restrict ? majorScaleIntervals : intervals;
+                updateScoreDisplay(availableIntervals);
+
 
                 // Disable play button while waiting
                 playButton.disabled = true;
@@ -427,6 +503,13 @@
             // Start the application when the DOM is fully loaded
             document.addEventListener('DOMContentLoaded', () => {
                 loadStats(); // Load existing or initialize new stats matrix
+                
+                // Initial score update based on loaded data
+                const restrict = shouldRestrictToMajorScale();
+                const availableIntervals = restrict ? majorScaleIntervals : intervals;
+                updateScoreDisplay(availableIntervals);
+                
+                // Generate question will now trigger the sound automatically
                 generateQuestion();
             });
 
