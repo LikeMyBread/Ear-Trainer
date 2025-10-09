@@ -41,7 +41,7 @@
         <div id="message-container" class="mt-6 w-full">
             <p id="message" class="text-lg font-semibold text-gray-300 h-6"></p>
             <p class="text-sm text-gray-500 mt-2">
-                <span class="font-semibold">Score:</span> 
+                <span class="font-semibold">Correct Answers:</span> 
                 <span id="score-counter">0</span> 
             </p>
         </div>
@@ -176,6 +176,7 @@
             }
 
             // Calculates the Correctness Score (Correct - Incorrect * 2) for a specific semitone value
+            // This score is used internally to drive the smart curriculum and question selection
             function getCorrectnessScore(semitones) {
                 if (!earTrainingStats[semitones]) return 0;
                 
@@ -187,17 +188,32 @@
                 return correctCount - (incorrectCount * 2);
             }
 
-            // Calculates the total correctness score across all intervals in the current curriculum set
+            // Calculates the total score using the complex scoring (for smart logic only)
             function calculateTotalCorrectnessScore(intervalSet) {
                 return intervalSet.reduce((total, interval) => {
                     return total + getCorrectnessScore(interval.semitones);
                 }, 0);
             }
             
+            // NEW: Calculates the simple total number of correct answers (for UI display)
+            function calculateTotalCorrectAnswers(intervalSet) {
+                let totalCorrect = 0;
+                // Iterate over all available intervals in the current set
+                intervalSet.forEach(interval => {
+                    const semitones = interval.semitones;
+                    // Correct count is stored where the played interval (row index) equals the guessed interval (column index)
+                    if (earTrainingStats[semitones] && earTrainingStats[semitones][semitones] !== undefined) {
+                        totalCorrect += earTrainingStats[semitones][semitones];
+                    }
+                });
+                return totalCorrect;
+            }
+
             // Updates the UI counters based on the current curriculum and stats matrix
             function updateScoreDisplay(availableIntervals) {
-                const totalScore = calculateTotalCorrectnessScore(availableIntervals);
-                scoreCounterEl.textContent = totalScore;
+                // Now uses the simple count of correct answers for display
+                const totalCorrect = calculateTotalCorrectAnswers(availableIntervals);
+                scoreCounterEl.textContent = totalCorrect;
             }
 
             // Clears all stats and resets the matrix
