@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ear Training App</title>
-    <!-- Use the Inter font for a clean look -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
@@ -18,6 +17,11 @@
             max-width: 90%;
             margin: 0 auto;
         }
+        /* Custom scrollbar for the settings panel if needed */
+        #settings-panel {
+            scrollbar-width: thin;
+            scrollbar-color: #4B5563 #1F2937;
+        }
     </style>
 </head>
 <body class="bg-gray-900 text-white min-h-screen flex items-center justify-center p-4">
@@ -26,8 +30,28 @@
     <div id="app-container" class="bg-gray-800 p-6 sm:p-8 rounded-2xl shadow-2xl w-full max-w-lg text-center flex flex-col items-center">
 
         <!-- App title and description -->
-        <h1 class="text-3xl sm:text-4xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600">Ear Trainer</h1>
-        <p id="curriculum-status" class="text-gray-400 text-sm sm:text-base mb-6">Curriculum: Major Scale</p>
+        <h1 class="text-3xl sm:text-4xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600">Ear Trainer</h1>
+
+        <!-- Interval Selector (Collapsible) -->
+        <div class="w-full mb-6 border-b border-gray-700 pb-4">
+            <button id="toggle-settings-btn" class="text-sm text-gray-400 hover:text-white flex items-center justify-center w-full focus:outline-none transition-colors duration-200 py-2">
+                <span class="font-semibold tracking-wide">⚙️ SELECT INTERVALS</span>
+                <svg id="settings-arrow" class="w-4 h-4 ml-1 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+            </button>
+            
+            <div id="settings-panel" class="hidden bg-gray-900/50 rounded-xl p-4 text-left mt-2 border border-gray-700">
+                <div class="flex justify-between mb-3 items-center border-b border-gray-700 pb-2">
+                    <span class="text-xs text-gray-400 uppercase font-bold">Focus</span>
+                    <div class="space-x-2">
+                        <button id="select-all-btn" class="text-xs bg-blue-900 hover:bg-blue-800 text-blue-200 px-2 py-1 rounded transition">All</button>
+                        <button id="select-none-btn" class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-2 py-1 rounded transition">None</button>
+                    </div>
+                </div>
+                <div id="interval-checkboxes" class="grid grid-cols-2 gap-y-2 gap-x-4 text-sm text-gray-300">
+                    <!-- Checkboxes will be dynamically added here -->
+                </div>
+            </div>
+        </div>
 
         <!-- Play button -->
         <button id="play-button" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition duration-300 transform hover:scale-105 active:scale-95 shadow-md">
@@ -37,9 +61,9 @@
             Play Interval
         </button>
 
-        <!-- Message and score container - SIMPLIFIED -->
+        <!-- Message and score container -->
         <div id="message-container" class="mt-6 w-full">
-            <p id="message" class="text-lg font-semibold text-gray-300 h-6"></p>
+            <p id="message" class="text-lg font-semibold text-gray-300 min-h-[1.5rem]"></p>
             <p class="text-sm text-gray-500 mt-2">
                 <span class="font-semibold">Total Correct:</span> 
                 <span id="score-counter">0</span> 
@@ -70,31 +94,35 @@
             const messageEl = document.getElementById('message');
             const scoreCounterEl = document.getElementById('score-counter');
             const resetStatsButton = document.getElementById('reset-stats-button');
-            const curriculumStatusEl = document.getElementById('curriculum-status'); 
+            
+            // Settings UI Elements
+            const toggleSettingsBtn = document.getElementById('toggle-settings-btn');
+            const settingsPanel = document.getElementById('settings-panel');
+            const settingsArrow = document.getElementById('settings-arrow');
+            const selectAllBtn = document.getElementById('select-all-btn');
+            const selectNoneBtn = document.getElementById('select-none-btn');
+            const checkboxesContainer = document.getElementById('interval-checkboxes');
 
             // --- Constants and State Variables ---
             const STARTING_MIDI_MIN = 48; // C3
             const STARTING_MIDI_MAX = 72; // C5
-            const STATS_STORAGE_KEY = 'earTrainingConfusionMatrixV2'; // Changed key for new tracking format
+            const STATS_STORAGE_KEY = 'earTrainingConfusionMatrixV2'; 
             const MAJOR_SCALE_CORRECTNESS_THRESHOLD = 2; 
             const WRONG_ANSWER_COUNT = 3;
 
-            // Matrix sizes: Rows for the 25 directed possibilities, Columns for the 13 possible user guesses (semitones 0-12)
+            // Matrix sizes: Rows for the 25 directed possibilities, Columns for the 13 possible user guesses
             const STATS_MATRIX_SIZE_PLAYED = 25; // 0 (Unison), 1-12 (Asc), 13-24 (Desc)
             const STATS_MATRIX_SIZE_GUESSED = 13; // 0-12 semitones
 
             let synth = null;
-            let currentCorrectInterval; // Holds the full directed interval object for the current question
+            let currentCorrectInterval; 
             let currentStartNote;     
-            let currentIntervalShift; // The actual semitone shift (+ve or -ve)
+            let currentIntervalShift; 
 
-            // The 25x13 matrix where index [i][j] tracks: 
-            // Played Directed Index 'i' (0-24), User Guessed Semitones 'j' (0-12).
             let earTrainingStats = []; 
-
+            
             // --- Game Data ---
 
-            // Base intervals (used for UI buttons)
             const intervals = [
                 { name: "Unison", semitones: 0 },
                 { name: "Minor 2nd", semitones: 1 },
@@ -111,66 +139,94 @@
                 { name: "Octave", semitones: 12 }
             ];
 
-            // Generates a list of all 25 directed intervals for internal tracking and question selection
+            // --- URL State Management ---
+
+            /**
+             * Parses the 'intervals' query parameter to determine initial selection.
+             * Format: ?intervals=0-4-7
+             * If param is missing, returns ALL intervals.
+             */
+            function getIntervalsFromURL() {
+                const params = new URLSearchParams(window.location.search);
+                const intervalsParam = params.get('intervals');
+                const selected = new Set();
+
+                if (intervalsParam !== null) {
+                    // If param exists but is empty string (e.g. ?intervals=), we start with empty set.
+                    if (intervalsParam.trim() === '') return selected;
+
+                    const parts = intervalsParam.split('-');
+                    parts.forEach(p => {
+                        const val = parseInt(p);
+                        if (!isNaN(val) && val >= 0 && val <= 12) {
+                            selected.add(val);
+                        }
+                    });
+                } else {
+                    // Default to ALL if no param is present (Standard mode)
+                    intervals.forEach(i => selected.add(i.semitones));
+                }
+                return selected;
+            }
+
+            /**
+             * Updates the browser URL based on the current userSelectedSemitones Set.
+             * Uses history.replaceState to avoid clogging the back button history.
+             */
+            function updateURLFromSelection() {
+                const sorted = Array.from(userSelectedSemitones).sort((a, b) => a - b);
+                const params = new URLSearchParams(window.location.search);
+                
+                // If all are selected, we remove the param to keep URL clean (implies default)
+                if (sorted.length === intervals.length) {
+                    params.delete('intervals');
+                } else {
+                    params.set('intervals', sorted.join('-'));
+                }
+                
+                // Construct new URL
+                const newQuery = params.toString();
+                const newUrl = window.location.pathname + (newQuery ? '?' + newQuery : '');
+                
+                // Update URL without reloading page
+                window.history.replaceState(null, '', newUrl);
+            }
+
+            // Initialize userSelectedSemitones from URL on load
+            let userSelectedSemitones = getIntervalsFromURL(); 
+
             const directedIntervals = (() => {
                 const directed = [];
                 const chromaticIntervals = intervals.filter(i => i.semitones >= 0);
 
                 chromaticIntervals.forEach(interval => {
                     const { name, semitones } = interval;
-
-                    // Unison (semitones 0)
                     if (semitones === 0) {
-                        directed.push({
-                            name: name,
-                            semitones: semitones,
-                            direction: 'N/A',
-                            playedIndex: 0
-                        });
+                        directed.push({ name, semitones, direction: 'N/A', playedIndex: 0 });
                         return;
                     }
-
-                    // Ascending (Index 1 to 12)
-                    directed.push({
-                        name: name,
-                        semitones: semitones,
-                        direction: 'Ascending',
-                        playedIndex: semitones
-                    });
-
-                    // Descending (Index 13 to 24)
-                    directed.push({
-                        name: name,
-                        semitones: semitones,
-                        direction: 'Descending',
-                        playedIndex: semitones + 12
-                    });
+                    directed.push({ name, semitones, direction: 'Ascending', playedIndex: semitones });
+                    directed.push({ name, semitones, direction: 'Descending', playedIndex: semitones + 12 });
                 });
                 return directed;
             })();
 
-            // Define major scale intervals for curriculum logic (now as directed intervals)
             const majorScaleSemitones = [0, 2, 4, 5, 7, 9, 11, 12];
             const majorScaleDirectedIntervals = directedIntervals.filter(int => 
                 majorScaleSemitones.includes(int.semitones)
             );
             
-            // Base intervals used for UI *when restricted* (Unison, M2, M3, P4, P5, M6, M7, Octave)
             const majorScaleIntervalsUI = intervals.filter(int => 
                 majorScaleSemitones.includes(int.semitones)
             );
             
             // --- Utility Functions ---
 
-            // Helper to get the semitones (0-12) from a played index (0-24)
             function getSemitonesFromPlayedIndex(playedIndex) {
                 if (playedIndex === 0) return 0;
-                // Indices 1-12 (Ascending) -> semitones 1-12
-                // Indices 13-24 (Descending) -> semitones 1-12
                 return playedIndex <= 12 ? playedIndex : playedIndex - 12;
             }
 
-            // Fisher-Yates shuffle algorithm to randomize an array
             function shuffleArray(array) {
                 for (let i = array.length - 1; i > 0; i--) {
                     const j = Math.floor(Math.random() * (i + 1));
@@ -179,14 +235,72 @@
                 return array;
             }
 
-            // Function to generate a random number within a range (inclusive)
             function getRandomNumber(min, max) {
                 return Math.floor(Math.random() * (max - min + 1)) + min;
             }
 
+            // --- Settings / Checkbox UI Functions ---
+
+            function renderIntervalCheckboxes() {
+                checkboxesContainer.innerHTML = '';
+                intervals.forEach(interval => {
+                    const wrapper = document.createElement('label');
+                    wrapper.className = 'flex items-center space-x-2 cursor-pointer hover:text-white transition';
+                    
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.value = interval.semitones;
+                    checkbox.checked = userSelectedSemitones.has(interval.semitones);
+                    checkbox.className = 'form-checkbox h-4 w-4 text-blue-600 rounded border-gray-600 bg-gray-700 focus:ring-blue-500 focus:ring-offset-gray-800';
+                    
+                    // Event listener for individual checkbox
+                    checkbox.addEventListener('change', (e) => {
+                        const semitone = parseInt(e.target.value);
+                        if (e.target.checked) {
+                            userSelectedSemitones.add(semitone);
+                        } else {
+                            userSelectedSemitones.delete(semitone);
+                        }
+                        updateURLFromSelection(); // Update URL immediately
+                        generateQuestion(); 
+                    });
+
+                    const text = document.createElement('span');
+                    text.textContent = interval.name;
+
+                    wrapper.appendChild(checkbox);
+                    wrapper.appendChild(text);
+                    checkboxesContainer.appendChild(wrapper);
+                });
+            }
+
+            function toggleSettingsPanel() {
+                const isHidden = settingsPanel.classList.contains('hidden');
+                if (isHidden) {
+                    settingsPanel.classList.remove('hidden');
+                    settingsArrow.classList.add('rotate-180');
+                } else {
+                    settingsPanel.classList.add('hidden');
+                    settingsArrow.classList.remove('rotate-180');
+                }
+            }
+
+            function selectAllIntervals() {
+                intervals.forEach(i => userSelectedSemitones.add(i.semitones));
+                updateURLFromSelection(); // Update URL
+                renderIntervalCheckboxes(); // Re-render to update UI check states
+                generateQuestion();
+            }
+
+            function selectNoneIntervals() {
+                userSelectedSemitones.clear();
+                updateURLFromSelection(); // Update URL
+                renderIntervalCheckboxes();
+                generateQuestion();
+            }
+
             // --- Stats Persistence Logic ---
 
-            // Creates a fresh 25x13 array filled with zeros
             function initializeStatsMatrix() {
                 const matrix = [];
                 for (let i = 0; i < STATS_MATRIX_SIZE_PLAYED; i++) {
@@ -195,32 +309,23 @@
                 return matrix;
             }
 
-            /**
-             * Loads stats from localStorage, or initializes if missing/corrupt.
-             */
             function loadStats() {
                 try {
                     const storedStats = localStorage.getItem(STATS_STORAGE_KEY);
                     if (storedStats) {
                         earTrainingStats = JSON.parse(storedStats);
-                        // Integrity check: ensure it's the correct 25x13 structure
                         if (earTrainingStats.length !== STATS_MATRIX_SIZE_PLAYED || 
                             (earTrainingStats.length > 0 && earTrainingStats[0].length !== STATS_MATRIX_SIZE_GUESSED)) {
-                            console.warn("Stored stats matrix structure mismatch (V2 check failed). Re-initializing.");
                             earTrainingStats = initializeStatsMatrix();
                         }
                     } else {
-                        // Initialize only if no stored data is found.
                         earTrainingStats = initializeStatsMatrix();
                     }
                 } catch (e) {
-                    console.error("Error loading stats from localStorage:", e);
-                    // Fallback to fresh matrix on error
                     earTrainingStats = initializeStatsMatrix(); 
                 }
             }
 
-            // Saves current stats to localStorage
             function saveStats() {
                 try {
                     localStorage.setItem(STATS_STORAGE_KEY, JSON.stringify(earTrainingStats));
@@ -229,33 +334,20 @@
                 }
             }
 
-            /**
-             * Calculates the Correctness Score (Correct - Incorrect * 2) for a specific directed interval.
-             * @param {number} playedIndex - The internal index (0-24) representing the directed interval.
-             * @returns {number} The correctness score.
-             */
             function getCorrectnessScore(playedIndex) {
                 if (!earTrainingStats[playedIndex]) return 0;
-                
                 const correctSemitones = getSemitonesFromPlayedIndex(playedIndex);
-                
                 let correctCount = earTrainingStats[playedIndex][correctSemitones];
                 let totalAttemptsForInterval = earTrainingStats[playedIndex].reduce((a, b) => a + b, 0);
                 let incorrectCount = totalAttemptsForInterval - correctCount;
-                
-                // Incorrect answers are multiplied by 2 (Lower Penalty)
                 return correctCount - (incorrectCount * 2);
             }
 
-            // Calculates the simple total number of correct answers (for UI display)
             function calculateTotalCorrectAnswers(availableDirectedIntervals) {
                 let totalCorrect = 0;
-                // Iterate over all available directed intervals in the current set
                 availableDirectedIntervals.forEach(directedInterval => {
                     const playedIndex = directedInterval.playedIndex;
                     const correctSemitones = directedInterval.semitones;
-
-                    // Correct count is stored where the played interval (row index) equals the correct semitone (column index)
                     if (earTrainingStats[playedIndex] && earTrainingStats[playedIndex][correctSemitones] !== undefined) {
                         totalCorrect += earTrainingStats[playedIndex][correctSemitones];
                     }
@@ -263,236 +355,175 @@
                 return totalCorrect;
             }
 
-            // Updates the UI counters based on the current curriculum and stats matrix
             function updateScoreDisplay(availableDirectedIntervals) {
                 const totalCorrect = calculateTotalCorrectAnswers(availableDirectedIntervals);
                 scoreCounterEl.textContent = totalCorrect;
             }
 
-            // Clears all stats and resets the matrix
             function resetStats() {
                 localStorage.removeItem(STATS_STORAGE_KEY);
                 earTrainingStats = initializeStatsMatrix();
-                console.log("All Ear Training Stats have been reset.");
-                
-                // Update UI state
                 messageEl.textContent = "Stats Reset! Progress cleared.";
                 messageEl.classList.remove('text-green-500', 'text-red-500', 'text-gray-300');
                 messageEl.classList.add('text-yellow-500');
-                
-                // Update display to reflect zero score
-                updateScoreDisplay(majorScaleDirectedIntervals);
-
-                // Start a new question
                 setTimeout(generateQuestion, 500); 
             }
             
             // --- Curriculum Logic ---
 
-            // Determines if the training should be restricted to major scale directed intervals
             function shouldRestrictToMajorScale() {
-                // Check if *any* directed major scale interval has a score below the threshold.
-                for (const directedInterval of majorScaleDirectedIntervals) {
+                // Filter major scale intervals to only those currently selected by the user
+                const activeMajorScaleIntervals = majorScaleDirectedIntervals.filter(
+                    interval => userSelectedSemitones.has(interval.semitones)
+                );
+
+                for (const directedInterval of activeMajorScaleIntervals) {
                     const score = getCorrectnessScore(directedInterval.playedIndex);
                     if (score < MAJOR_SCALE_CORRECTNESS_THRESHOLD) {
-                        return true; // Still restricted to major scale
+                        return true; 
                     }
                 }
-                return false; // All major scale intervals passed the threshold, unlock full chromatic
+                return false; 
             }
 
             // --- Smart Question Selection Logic ---
 
-            /**
-             * Chooses the next directed interval based on a weighted random choice where lower correctness scores have higher probability.
-             * @param {Array} directedIntervalSet - The set of directed intervals (0-24) to choose from.
-             * @returns {Object} The chosen directed interval object.
-             */
             function chooseNextInterval(directedIntervalSet) {
+                // If set is empty, handle gracefully (though generateQuestion should prevent this)
+                if (!directedIntervalSet || directedIntervalSet.length === 0) return null;
+
                 const intervalData = [];
                 let maxScore = -Infinity;
                 let totalAttemptsInSet = 0;
 
-                // 1. Calculate scores and find maxScore
                 for (const directedInterval of directedIntervalSet) {
                     const playedIndex = directedInterval.playedIndex;
-                    
                     let totalAttemptsForInterval = earTrainingStats[playedIndex].reduce((a, b) => a + b, 0);
                     totalAttemptsInSet += totalAttemptsForInterval;
-
                     let score = getCorrectnessScore(playedIndex);
                     
-                    intervalData.push({
-                        directedInterval: directedInterval,
-                        score: score
-                    });
+                    intervalData.push({ directedInterval: directedInterval, score: score });
 
-                    if (score > maxScore) {
-                        maxScore = score;
-                    }
+                    if (score > maxScore) maxScore = score;
                 }
                 
-                // If there are no attempts at all, revert to pure random selection from the set
                 if (totalAttemptsInSet === 0) {
                     return directedIntervalSet[getRandomNumber(0, directedIntervalSet.length - 1)];
                 }
 
-                // 2. Calculate weights (Weight = maxScore - currentScore + 1)
                 let totalWeight = 0;
                 intervalData.forEach(data => {
-                    // Weight is always >= 1 (even the best-performing interval has a weight of 1)
                     data.weight = maxScore - data.score + 1;
                     totalWeight += data.weight;
                 });
                 
-                // 3. Perform weighted random selection
                 let randomValue = Math.random() * totalWeight;
-
                 for (const data of intervalData) {
                     randomValue -= data.weight;
-                    if (randomValue <= 0) {
-                        return data.directedInterval;
-                    }
+                    if (randomValue <= 0) return data.directedInterval;
                 }
-                
-                // Fallback (should not be hit if logic is correct)
                 return directedIntervalSet[directedIntervalSet.length - 1];
             }
 
             // --- Audio & Game Logic ---
 
-            // Plays the interval notes using the stored state
             async function playInterval() {
-                // Ensure Tone.js is running, which requires a user gesture.
                 await Tone.start();
-
-                // Initialize the synth only once, after Tone.js is ready.
                 if (!synth) {
-                    // Using a slightly more complex waveform for better ear recognition
-                    synth = new Tone.Synth({
+                    // Use PolySynth to avoid "Start time" errors during rapid playback
+                    synth = new Tone.PolySynth(Tone.Synth, {
                         oscillator: { type: "triangle" },
                         envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 0.5 }
                     }).toDestination();
                 }
 
                 messageEl.textContent = "Listen...";
-                
-                // Use the parameters calculated and stored in generateQuestion()
                 const startNote = currentStartNote;
                 const intervalShift = currentIntervalShift;
-
-                // Calculate the second note using Tone.Frequency.transpose()
                 const endNote = Tone.Frequency(startNote).transpose(intervalShift).toNote();
 
-                // Play the notes sequentially
-                synth.triggerAttackRelease(startNote, "8n");
-                // Note 2 is scheduled after 800ms
-                setTimeout(() => {
-                    synth.triggerAttackRelease(endNote, "8n");
-                }, 800);
+                const now = Tone.now();
+                // Schedule notes using Tone's time system + buffer to ensure no past-scheduling
+                synth.triggerAttackRelease(startNote, "8n", now + 0.05);
+                synth.triggerAttackRelease(endNote, "8n", now + 0.05 + 0.8);
             }
 
-            // Generates a new question, including the randomization of the interval to be played
             function generateQuestion() {
                 messageEl.textContent = "";
                 choicesContainer.innerHTML = "";
                 
-                // Determine the available pool of directed intervals based on curriculum status
+                // 1. Determine the base pool (Curriculum Logic)
                 const restrict = shouldRestrictToMajorScale();
-                const availableDirectedIntervals = restrict ? majorScaleDirectedIntervals : directedIntervals;
+                const baseDirectedPool = restrict ? majorScaleDirectedIntervals : directedIntervals;
+                const baseUIPool = restrict ? majorScaleIntervalsUI : intervals;
+
+                // 2. Apply User Selection Filter (Selection Logic)
+                // We take the intersection of "Curriculum Allowed" and "User Selected"
+                const availableDirectedIntervals = baseDirectedPool.filter(i => userSelectedSemitones.has(i.semitones));
+                const availableUIIntervals = baseUIPool.filter(i => userSelectedSemitones.has(i.semitones));
                 
-                // *** FIX: Determine the pool of UI choices (buttons) based on restriction ***
-                const availableUIIntervals = restrict ? majorScaleIntervalsUI : intervals;
-                
-                // Update the curriculum status message
-                if (restrict) {
-                    curriculumStatusEl.textContent = "Curriculum: Major Scale (Focusing on M2, M3, P4, P5, M6, M7)";
-                } else {
-                    curriculumStatusEl.textContent = "Curriculum: Full Chromatic Scale (All Intervals Unlocked)";
+                // --- SAFETY CHECK: Ensure we have intervals to play ---
+                if (availableDirectedIntervals.length === 0) {
+                    messageEl.textContent = "No intervals available! Please select more intervals in settings.";
+                    messageEl.className = "text-yellow-500 font-bold";
+                    playButton.disabled = true;
+                    playButton.classList.add('opacity-50', 'cursor-not-allowed');
+                    updateScoreDisplay([]); 
+                    return; // STOP HERE
                 }
 
-                // Update the score display based on the current curriculum selection
                 updateScoreDisplay(availableDirectedIntervals);
 
-                // 1. Select the correct directed interval type using the smart logic
+                // 3. Select Correct Interval
                 currentCorrectInterval = chooseNextInterval(availableDirectedIntervals);
                 const correctPlayedIndex = currentCorrectInterval.playedIndex;
                 const correctSemitones = currentCorrectInterval.semitones;
 
-                // 2. Determine the random starting note and the actual shift (+/- semitones)
                 const startMidi = getRandomNumber(STARTING_MIDI_MIN, STARTING_MIDI_MAX);
                 currentStartNote = Tone.Midi(startMidi).toNote();
                 
-                // Calculate the actual shift: positive for Ascending (Index 1-12), negative for Descending (Index 13-24)
-                if (correctPlayedIndex === 0) {
-                    // Unison
-                    currentIntervalShift = 0;
-                } else if (correctPlayedIndex <= 12) {
-                    // Ascending (Index 1-12)
-                    currentIntervalShift = correctSemitones;
-                } else {
-                    // Descending (Index 13-24)
-                    currentIntervalShift = -correctSemitones;
-                }
+                if (correctPlayedIndex === 0) currentIntervalShift = 0;
+                else if (correctPlayedIndex <= 12) currentIntervalShift = correctSemitones;
+                else currentIntervalShift = -correctSemitones;
 
-                // --- 3. Weighted selection for incorrect answer choices ---
-                
-                // Potential pool of wrong answers based on the AVAILABLE UI intervals
+                // 4. Weighted selection for Wrong Answers
+                // Only pick wrong answers from the AVAILABLE pool (Intersection of Curriculum & User Select)
                 const potentialWrongIntervals = availableUIIntervals.filter(interval => interval.semitones !== correctSemitones);
 
                 let weightedWrongChoices = [];
                 let totalConfusionWeight = 0;
 
                 potentialWrongIntervals.forEach(interval => {
-                    // Weight is the number of times the user confused the correct directed interval (correctPlayedIndex)
-                    // with this wrong semitone interval (interval.semitones).
                     const confusionCount = earTrainingStats[correctPlayedIndex][interval.semitones];
-                    
-                    // Add a base weight of 1 to ensure even rarely confused choices have a chance
                     const weight = confusionCount + 1; 
-
-                    weightedWrongChoices.push({
-                        interval: interval,
-                        weight: weight
-                    });
+                    weightedWrongChoices.push({ interval: interval, weight: weight });
                     totalConfusionWeight += weight;
                 });
                 
-                // Select unique wrong answers using weighted random sampling
                 let selectedWrongAnswers = [];
                 let availableWrongChoices = [...weightedWrongChoices]; 
-
                 const wrongAnswerCountToPick = Math.min(WRONG_ANSWER_COUNT, availableWrongChoices.length);
 
                 while (selectedWrongAnswers.length < wrongAnswerCountToPick && availableWrongChoices.length > 0) {
                     let randomValue = Math.random() * totalConfusionWeight;
-                    
                     for (let i = 0; i < availableWrongChoices.length; i++) {
                         const choice = availableWrongChoices[i];
-                        
                         randomValue -= choice.weight;
-                        
                         if (randomValue <= 0) {
-                            // Found a selected wrong answer
                             selectedWrongAnswers.push(choice.interval);
-                            
-                            // Remove the selected choice from the pool and update total weight
                             totalConfusionWeight -= choice.weight;
                             availableWrongChoices.splice(i, 1);
                             break; 
                         }
                     }
                 }
-                // --- End of weighted selection ---
 
-                // 4. Combine and shuffle the choices for the buttons 
+                // 5. Create Buttons
                 const choices = shuffleArray([
-                    // Use the availableUIIntervals list to find the correct choice object
                     availableUIIntervals.find(i => i.semitones === correctSemitones), 
                     ...selectedWrongAnswers
                 ]);
 
-                // 5. Create and append the choice buttons
                 choices.forEach(choice => {
                     const button = document.createElement('button');
                     button.textContent = choice.name;
@@ -501,92 +532,65 @@
                     choicesContainer.appendChild(button);
                 });
 
-                // Re-enable the play button
                 playButton.disabled = false;
                 playButton.classList.remove('opacity-50', 'cursor-not-allowed');
 
-                // *** AUTOPLAY THE INTERVAL ***
+                // Only autoplay if we generated a valid question
                 playInterval();
             }
 
-            // Handles the user's answer choice
             function handleAnswer(selectedChoice) {
-                
-                // --- Record Keeping Update ---
-                const correctPlayedIndex = currentCorrectInterval.playedIndex; // Row index (0-24)
+                const correctPlayedIndex = currentCorrectInterval.playedIndex; 
                 const correctSemitones = currentCorrectInterval.semitones;
-                const guessedSemitones = selectedChoice.semitones;         // Column index (0-12)
+                const guessedSemitones = selectedChoice.semitones;         
                 
                 let statsUpdated = false;
                 
-                // 1. Record the actual attempt (Played Directed Interval, User Guessed Semitone).
                 if (correctPlayedIndex >= 0 && correctPlayedIndex < STATS_MATRIX_SIZE_PLAYED && 
                     guessedSemitones >= 0 && guessedSemitones < STATS_MATRIX_SIZE_GUESSED) {
-                    
                     earTrainingStats[correctPlayedIndex][guessedSemitones]++;
                     statsUpdated = true;
-                } else {
-                    console.error("Invalid semitone indices encountered in handleAnswer.");
                 }
 
-                // --- UI and Scoring Logic ---
-                
-                // Disable all choice buttons to prevent multiple clicks
                 const allButtons = document.querySelectorAll('.choice-button');
                 allButtons.forEach(btn => btn.disabled = true);
                 
                 if (guessedSemitones === correctSemitones) {
                     messageEl.textContent = "Correct!";
-                    messageEl.classList.remove('text-red-500', 'text-yellow-500', 'text-gray-300');
-                    messageEl.classList.add('text-green-500');
+                    messageEl.className = "text-lg font-semibold h-6 text-green-500";
                 } else {
-                    // This message now includes the name, but not the direction, as per the original requirement.
                     messageEl.textContent = `Incorrect. The answer was a ${currentCorrectInterval.name}.`;
-                    messageEl.classList.remove('text-green-500', 'text-yellow-500', 'text-gray-300');
-                    messageEl.classList.add('text-red-500');
-
-                    // NOTE: Symmetric confusion tracking is more complex with directed intervals (V3), 
-                    // so for V2 we only track the specific confusion from played directed interval to guessed semitone.
+                    messageEl.className = "text-lg font-semibold h-6 text-red-500";
                 }
 
-                // 2. Save stats once if any update occurred
-                if (statsUpdated) {
-                    saveStats();
-                }
+                if (statsUpdated) saveStats();
 
-                // Recalculate and update score display based on the updated matrix
+                // Update score for the current valid pool
                 const restrict = shouldRestrictToMajorScale();
-                const availableDirectedIntervals = restrict ? majorScaleDirectedIntervals : directedIntervals;
+                const baseDirectedPool = restrict ? majorScaleDirectedIntervals : directedIntervals;
+                const availableDirectedIntervals = baseDirectedPool.filter(i => userSelectedSemitones.has(i.semitones));
                 updateScoreDisplay(availableDirectedIntervals);
 
-                // Disable play button while waiting
                 playButton.disabled = true;
                 playButton.classList.add('opacity-50', 'cursor-not-allowed');
 
-                // Wait a moment before generating a new question
                 setTimeout(() => {
                     generateQuestion();
-                }, 2000); // 2-second delay
+                }, 2000); 
             }
 
             // --- Event Listeners and Initialization ---
             
-            // Play button listener
             playButton.addEventListener('click', playInterval);
-
-            // Reset stats button listener
             resetStatsButton.addEventListener('click', resetStats);
+            
+            toggleSettingsBtn.addEventListener('click', toggleSettingsPanel);
+            selectAllBtn.addEventListener('click', selectAllIntervals);
+            selectNoneBtn.addEventListener('click', selectNoneIntervals);
 
-            // Start the application when the DOM is fully loaded
             document.addEventListener('DOMContentLoaded', () => {
-                loadStats(); // Load existing or initialize new stats matrix
-                
-                // Initial score update based on loaded data
-                const restrict = shouldRestrictToMajorScale();
-                const availableDirectedIntervals = restrict ? majorScaleDirectedIntervals : directedIntervals;
-                updateScoreDisplay(availableDirectedIntervals);
-                
-                // Generate question will now trigger the sound automatically
+                loadStats(); 
+                renderIntervalCheckboxes(); // Init settings UI
                 generateQuestion();
             });
 
