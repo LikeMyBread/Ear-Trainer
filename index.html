@@ -118,6 +118,7 @@
             let currentCorrectInterval; 
             let currentStartNote;     
             let currentIntervalShift; 
+            let currentChoices = []; // Tracks the currently displayed answer choices
 
             let earTrainingStats = []; 
             
@@ -141,20 +142,13 @@
 
             // --- URL State Management ---
 
-            /**
-             * Parses the 'intervals' query parameter to determine initial selection.
-             * Format: ?intervals=0-4-7
-             * If param is missing, returns ALL intervals.
-             */
             function getIntervalsFromURL() {
                 const params = new URLSearchParams(window.location.search);
                 const intervalsParam = params.get('intervals');
                 const selected = new Set();
 
                 if (intervalsParam !== null) {
-                    // If param exists but is empty string (e.g. ?intervals=), we start with empty set.
                     if (intervalsParam.trim() === '') return selected;
-
                     const parts = intervalsParam.split('-');
                     parts.forEach(p => {
                         const val = parseInt(p);
@@ -163,32 +157,23 @@
                         }
                     });
                 } else {
-                    // Default to ALL if no param is present (Standard mode)
                     intervals.forEach(i => selected.add(i.semitones));
                 }
                 return selected;
             }
 
-            /**
-             * Updates the browser URL based on the current userSelectedSemitones Set.
-             * Uses history.replaceState to avoid clogging the back button history.
-             */
             function updateURLFromSelection() {
                 const sorted = Array.from(userSelectedSemitones).sort((a, b) => a - b);
                 const params = new URLSearchParams(window.location.search);
                 
-                // If all are selected, we remove the param to keep URL clean (implies default)
                 if (sorted.length === intervals.length) {
                     params.delete('intervals');
                 } else {
                     params.set('intervals', sorted.join('-'));
                 }
                 
-                // Construct new URL
                 const newQuery = params.toString();
                 const newUrl = window.location.pathname + (newQuery ? '?' + newQuery : '');
-                
-                // Update URL without reloading page
                 window.history.replaceState(null, '', newUrl);
             }
 
@@ -239,6 +224,27 @@
                 return Math.floor(Math.random() * (max - min + 1)) + min;
             }
 
+            /**
+             * Checks if the currently displayed question (correct answer + choices) 
+             * is valid under the current set of userSelectedSemitones.
+             */
+            function isCurrentQuestionValid() {
+                // No question active yet
+                if (!currentCorrectInterval || currentChoices.length === 0) return false;
+
+                // 1. Check if the correct answer is still in selected semitones
+                if (!userSelectedSemitones.has(currentCorrectInterval.semitones)) return false;
+
+                // 2. Check if ALL displayed choices are still in selected semitones
+                for (const choice of currentChoices) {
+                    if (!userSelectedSemitones.has(choice.semitones)) {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+
             // --- Settings / Checkbox UI Functions ---
 
             function renderIntervalCheckboxes() {
@@ -261,8 +267,13 @@
                         } else {
                             userSelectedSemitones.delete(semitone);
                         }
-                        updateURLFromSelection(); // Update URL immediately
-                        generateQuestion(); 
+                        updateURLFromSelection(); 
+                        
+                        // Only regenerate if the current question is now invalid.
+                        // Do NOT play sound on settings change (pass false).
+                        if (!isCurrentQuestionValid()) {
+                            generateQuestion(false); 
+                        }
                     });
 
                     const text = document.createElement('span');
@@ -287,16 +298,21 @@
 
             function selectAllIntervals() {
                 intervals.forEach(i => userSelectedSemitones.add(i.semitones));
-                updateURLFromSelection(); // Update URL
-                renderIntervalCheckboxes(); // Re-render to update UI check states
-                generateQuestion();
+                updateURLFromSelection(); 
+                renderIntervalCheckboxes(); 
+                // Usually "All" includes the current subset, so it shouldn't invalidate.
+                // But we check just in case.
+                if (!isCurrentQuestionValid()) {
+                    generateQuestion(false);
+                }
             }
 
             function selectNoneIntervals() {
                 userSelectedSemitones.clear();
-                updateURLFromSelection(); // Update URL
+                updateURLFromSelection(); 
                 renderIntervalCheckboxes();
-                generateQuestion();
+                // This will definitely invalidate the question.
+                generateQuestion(false);
             }
 
             // --- Stats Persistence Logic ---
@@ -448,7 +464,11 @@
                 synth.triggerAttackRelease(endNote, "8n", now + 0.05 + 0.8);
             }
 
-            function generateQuestion() {
+            /**
+             * Generates a new ear training question.
+             * @param {boolean} autoPlay - If true, play audio immediately. If false, just set up UI.
+             */
+            function generateQuestion(autoPlay = true) {
                 messageEl.textContent = "";
                 choicesContainer.innerHTML = "";
                 
@@ -519,12 +539,12 @@
                 }
 
                 // 5. Create Buttons
-                const choices = shuffleArray([
+                currentChoices = shuffleArray([
                     availableUIIntervals.find(i => i.semitones === correctSemitones), 
                     ...selectedWrongAnswers
                 ]);
 
-                choices.forEach(choice => {
+                currentChoices.forEach(choice => {
                     const button = document.createElement('button');
                     button.textContent = choice.name;
                     button.classList.add('choice-button', 'bg-gray-700', 'hover:bg-gray-600', 'text-white', 'font-semibold', 'py-3', 'rounded-xl', 'transition', 'duration-200', 'active:scale-95');
@@ -535,8 +555,13 @@
                 playButton.disabled = false;
                 playButton.classList.remove('opacity-50', 'cursor-not-allowed');
 
-                // Only autoplay if we generated a valid question
-                playInterval();
+                // Only autoplay if requested (e.g. not during settings change)
+                if (autoPlay) {
+                    playInterval();
+                } else {
+                    messageEl.textContent = "Press 'Play Interval' to hear the new question.";
+                    messageEl.className = "text-gray-400 text-sm font-normal";
+                }
             }
 
             function handleAnswer(selectedChoice) {
@@ -591,7 +616,7 @@
             document.addEventListener('DOMContentLoaded', () => {
                 loadStats(); 
                 renderIntervalCheckboxes(); // Init settings UI
-                generateQuestion();
+                generateQuestion(true); // Autoplay on first load
             });
 
         })();
