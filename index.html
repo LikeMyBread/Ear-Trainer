@@ -245,6 +245,18 @@
                 return true;
             }
 
+            /**
+             * Determines if the question must be regenerated based on state changes.
+             * Returns true if:
+             * 1. The current question is invalid (contains now-deselected intervals).
+             * 2. The user now has >= 2 intervals selected, but fewer than 2 choices are shown (violating the 'at least 2' rule).
+             */
+            function shouldRegenerateQuestion() {
+                if (!isCurrentQuestionValid()) return true;
+                if (userSelectedSemitones.size >= 2 && currentChoices.length < 2) return true;
+                return false;
+            }
+
             // --- Settings / Checkbox UI Functions ---
 
             function renderIntervalCheckboxes() {
@@ -269,9 +281,8 @@
                         }
                         updateURLFromSelection(); 
                         
-                        // Only regenerate if the current question is now invalid.
-                        // Do NOT play sound on settings change (pass false).
-                        if (!isCurrentQuestionValid()) {
+                        // Regenerate if invalid OR if we need to enforce "at least 2 choices" rule
+                        if (shouldRegenerateQuestion()) {
                             generateQuestion(false); 
                         }
                     });
@@ -300,9 +311,8 @@
                 intervals.forEach(i => userSelectedSemitones.add(i.semitones));
                 updateURLFromSelection(); 
                 renderIntervalCheckboxes(); 
-                // Usually "All" includes the current subset, so it shouldn't invalidate.
-                // But we check just in case.
-                if (!isCurrentQuestionValid()) {
+                
+                if (shouldRegenerateQuestion()) {
                     generateQuestion(false);
                 }
             }
@@ -311,7 +321,7 @@
                 userSelectedSemitones.clear();
                 updateURLFromSelection(); 
                 renderIntervalCheckboxes();
-                // This will definitely invalidate the question.
+                // Always regenerate on clear (invokes safety check inside generateQuestion)
                 generateQuestion(false);
             }
 
@@ -473,7 +483,21 @@
                 choicesContainer.innerHTML = "";
                 
                 // 1. Determine the base pool (Curriculum Logic)
-                const restrict = shouldRestrictToMajorScale();
+                let restrict = shouldRestrictToMajorScale();
+                
+                // --- OVERRIDE LOGIC: Ensure at least 2 choices if 2+ selected ---
+                if (userSelectedSemitones.size >= 2) {
+                    // Count how many of the user's selected intervals exist in the major scale pool
+                    const selectedInMajorScale = majorScaleIntervalsUI.filter(i => userSelectedSemitones.has(i.semitones)).length;
+                    
+                    // If the user is restricted (not mastered major scale yet), 
+                    // but their selection results in fewer than 2 choices within the major scale,
+                    // we override the restriction to ensure they get at least 2 buttons.
+                    if (restrict && selectedInMajorScale < 2) {
+                        restrict = false;
+                    }
+                }
+
                 const baseDirectedPool = restrict ? majorScaleDirectedIntervals : directedIntervals;
                 const baseUIPool = restrict ? majorScaleIntervalsUI : intervals;
 
